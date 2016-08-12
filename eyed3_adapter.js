@@ -7,8 +7,6 @@ const write_meta = (filepath, meta, next) => {
     cmd += ` --title "${meta['title']}"`
     if (meta['genre'] && meta['genre'] != '[???]')
         cmd += ` --genre "${meta['genre']}"`
-    if (meta['image'])
-        cmd += ` --add-image "${meta['image']}":FRONT_COVER`
     cmd += ` "${filepath}"`
 
     exec(`eyeD3 ${cmd}`, (err, stdout, stderr) => {
@@ -16,7 +14,14 @@ const write_meta = (filepath, meta, next) => {
             return next(err)
         }
 
-        next()
+        if (meta['image']) {
+            let cmd = `--add-image "${meta['image']}:FRONT_COVER"`
+            exec(`eyeD3 ${cmd} "${filepath}"`, (err, stdout, stderr) => {
+                next(err)
+            })
+        } else {
+            next()
+        }
     })
 }
 

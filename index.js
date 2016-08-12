@@ -2,13 +2,11 @@
 const https = require('https')
 const fs = require('fs')
 const path = require('path')
-const id3 = require('id3-writer')
-const writer = new id3.Writer();
 
 const config = require('./config.json')
 const meId = config.id
-const outDirectory = config.out_directory
-const tmpdir = './tmp'
+const tmpdir_prefix = path.join('./', 'tmp')
+let tmpdir;
 // Initialize client
 const appData = {
     id: config.app_data_id,
@@ -173,19 +171,31 @@ function downloadTrack(track, dirOut, cb) {
 }
 
 // Make dir or use existing
-function mkdirSync(path) {
-  try {
-    fs.mkdirSync(path);
-  } catch(e) {
-    if (e.code != 'EEXIST') throw e;
-  }
+function mkdirSync(path, ignore_exist) {
+    if (ignore_exist === undefined) {
+        ignore_exist = true
+    }
+    try {
+        fs.mkdirSync(path);
+    } catch(e) {
+        if (!ignore_exist)
+            if (e.code != 'EEXIST') throw e;
+        else
+            throw e
+    }
 }
 
 
 function downloadUserFavTracks(userId, dirOut) {
+    mkdirSync(dirOut, false);
 
-    mkdirSync(dirOut);
-    mkdirSync(tmpdir);
+    tmpdir = fs.mkdtempSync(tmpdir_prefix);
+    let cleanup = () => {
+        fs.readdirSync(tmpdir).forEach((file) => {
+            fs.unlinkSync(path.join(tmpdir, file));
+        })
+        fs.rmdirSync(tmpdir);
+    }
 
     getFavoritesTracks(userId, function(err, favs) {
         if (err) {
@@ -224,7 +234,6 @@ function downloadUserFavTracks(userId, dirOut) {
                     // }
                     downloadTrack(fav, dirOut, (err) => {
                         if (err) {
-                            console.log(err);
                             throw err;
                             return
                         }
@@ -235,6 +244,7 @@ function downloadUserFavTracks(userId, dirOut) {
             cascade.push(() => {
                 // cleanup code ?
                 // rm tmpdir
+                cleanup()
                 console.log(`\ndownloaded ${favs.length} tracks! enjoy`)
             })
             cascade[0]()
@@ -243,10 +253,12 @@ function downloadUserFavTracks(userId, dirOut) {
 }
 
 
-let _outDirectory = outDirectory;
+let _outDirectory;
 if (process.argv.length > 2) {
     _outDirectory = process.argv[2]
     _outDirectory = path.join('./', _outDirectory)
+} else {
+    throw "program needs a TARGET directory"
 }
 
 // console.log(_outDirectory)
