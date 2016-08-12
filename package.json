@@ -9,7 +9,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "id3-writer": "^1.2.2",
-    "node-soundcloud": "0.0.5"
+    "progress": "^1.1.8"
   }
 }

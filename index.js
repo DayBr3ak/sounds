@@ -59,7 +59,7 @@ let SC = {
                 })
                 res.on('end', function() {
                     stream.end()
-                    console.log('Track: ' + trackObject['title'] + ' // Downloaded')
+                    // console.log('Track: ' + trackObject['title'] + ' // Downloaded')
                     setTimeout(() => {
                         if (!errorHappened)
                             cb()
@@ -70,6 +70,13 @@ let SC = {
     },
     artworkFromTrack: function(trackObject, cb) {
         let artworkUrl = trackObject['artwork_url']
+        if (!artworkUrl) {
+            artworkUrl = trackObject['user']['avatar_url']
+            if (!artworkUrl) {
+                console.log('no artwork')
+                return cb(null)
+            }
+        }
         let artworkFilePath = path.join(tmpdir, trackObject['permalink'] + '.jpg')
         let stream = fs.createWriteStream(artworkFilePath);
         stream.on('error', (err) => {
@@ -130,32 +137,28 @@ function getFavoritesTracks(userId, cb) {
     })
 }
 
-
+const eyed3 = require('./eyed3_adapter.js')
+const ProgressBar = require('progress')
 
 function downloadTrack(track, dirOut, cb) {
     let outfile = track['title'] + '.mp3'
     outfile = path.join(dirOut, outfile.replace('|', '-'))
-    console.log('outfile')
-    console.log(outfile)
-    let setMetaData = () => {
+    let setMetaData = (track) => {
         SC.artworkFromTrack(track, (artworkFilePath) => {
-            var coverImage = new id3.Image(artworkFilePath);
-            let id3file = new id3.File(outfile);
-            let meta = new id3.Meta({
+            let meta = {
                 artist: track['user']['username'],
                 title: track['title'],
                 album: 'Soundcloud',
-                genre: track['genre']
-            }, [coverImage]);
-
-            writer.setFile(id3file).write(meta, (err) => {
+                genre: track['genre'],
+                image: artworkFilePath
+            };
+            // console.log(meta)
+            eyed3.write_meta(outfile, meta, (err) => {
                 if (err) {
-                    // Handle the error
                     return cb(err)
                 }
-                // console.log('metadata set successfully')
                 cb()
-            });
+            })
         })
     }
 
@@ -164,7 +167,7 @@ function downloadTrack(track, dirOut, cb) {
         if (err) {
             return cb(err)
         }
-        setMetaData()
+        setMetaData(track)
     })
 
 }
@@ -188,29 +191,53 @@ function downloadUserFavTracks(userId, dirOut) {
         if (err) {
             throw err;
         } else {
-            let stop = false;
-            let nbToDl = favs.length
-            let downloaded = 0
-            favs.forEach(function(fav) {
-                // console.log(fav)
-                if (fav.permalink != 'edge-of-the-world')
-                    return
-                if (stop) {
-                    return
+            let progress_bar = new ProgressBar(
+                '  downloading [:bar] :percent :etas',
+                {
+                    total: favs.length,
+                    complete: '=',
+                    incomplete: ' ',
+                    width: 20,
                 }
-                downloadTrack(fav, dirOut, (err) => {
-                    if (err) {
-                        console.log(err);
-                        throw err;
-                        return
-                    }
-                    downloaded += 1
-                    if (downloaded == nbToDl) {
-                        console.log(`downloaded ${nbToDl} tracks! enjoy`)
-                    }
+            )
+            let cascade = []
+            let cascade_id = 0
+            let next = () => {
+                progress_bar.tick()
+                cascade_id++
+                cascade[cascade_id]()
+            }
+
+            // let _favs = []
+            // favs.forEach((fav) => {
+            //     if (fav.permalink == 'outsideremix') {
+            //         _favs.push(fav)
+            //     }
+            // })
+            // favs = _favs
+            // console.log(favs[0])
+
+            favs.forEach((fav) => {
+                cascade.push(() => {
+                    // if (fav.permalink != 'dont-stop-the-fatrat-remix') {
+                    //     return next()
+                    // }
+                    downloadTrack(fav, dirOut, (err) => {
+                        if (err) {
+                            console.log(err);
+                            throw err;
+                            return
+                        }
+                        return next()
+                    })
                 })
-                // stop = true
             })
+            cascade.push(() => {
+                // cleanup code ?
+                // rm tmpdir
+                console.log(`\ndownloaded ${favs.length} tracks! enjoy`)
+            })
+            cascade[0]()
         }
     })
 }
